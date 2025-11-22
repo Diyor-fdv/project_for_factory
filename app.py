@@ -3,15 +3,14 @@ import pandas as pd
 import sqlite3
 from datetime import datetime, date
 from io import BytesIO
-from pathlib import Path
 
 DB_FILE = "belaz.db"
 
-# Local logo file
-LOGO_PATH = Path(__file__).parent / "logo.jpg"
+# Logo from URL (AGMK)
+LOGO_URL = "https://agmk.uz/uploads/news/3a1b485c044e3d563acdd095d26ee287.jpg"
 
-# Admin parol (xohlasang o'zing o'zgartirasan)
-ADMIN_CODE = "SJ8696"
+# Admin parol
+ADMIN_CODE = "shjsh707"
 
 
 # =====================================
@@ -35,7 +34,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts TEXT NOT NULL,          -- время
             day TEXT NOT NULL,         -- дата (YYYY-MM-DD)
-            excavator TEXT NOT NULL,   -- экскаватор (1Y, 2Y, Y4, 18Y...)
+            excavator TEXT NOT NULL,   -- экскаватор (1Y, 2Y, 13Y, ...)
             otval TEXT NOT NULL,       -- отвал (название)
             truck_id INTEGER NOT NULL, -- номер БелАЗа
             truck_class TEXT NOT NULL, -- тип: 130т / 220т / 240т / unknown
@@ -52,7 +51,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS otvals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
-            length REAL                -- длина (км или м), может быть NULL
+            length REAL                -- длина (км), может быть NULL
         );
         """
     )
@@ -240,15 +239,25 @@ def upsert_otval(name: str, length):
     conn.close()
 
 
+def delete_otval(name: str):
+    """Faqat otvals jadvalidan o'chiradi. Records tarixi qoladi."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM otvals WHERE name = ?;", (name,))
+    conn.commit()
+    conn.close()
+
+
 # =====================================
 #   Streamlit UI
 # =====================================
 
 EXCAVATORS = [
-    "1Y", "2Y","13Y",
+    "1Y", "2Y",
+    "13Y",
     "18Y", "19Y", "20Y", "21Y", "22Y", "23Y", "24Y", "25Y", "26Y", "27Y",
     "28Y", "29Y", "30Y", "31Y", "32Y"
-]
+]  # Y4 olib tashlangan
 
 
 def init_session_state():
@@ -265,17 +274,16 @@ def main():
     init_db()
     init_session_state()
 
-    # ---------- HEADER ----------
-    header_col1, header_col2 = st.columns([1, 5])
-    with header_col1:
-        if LOGO_PATH.exists():
-            st.image(str(LOGO_PATH), width=140)
-        else:
-            st.write("⛏️")
-    with header_col2:
+    # ---------- HEADER (logo + text bir xil line’da) ----------
+    hcol1, hcol2 = st.columns([1.2, 3])
+    with hcol1:
+        st.image(LOGO_URL, use_container_width=True)
+    with hcol2:
         st.markdown(
-            '<h2 style="margin-bottom:0;">Карьер "БАРАКАЛИ"- @SJ8696</h2>'
-            '<h4 style="margin-top:0;">Учёт ходок БелАЗов по экскаваторам</h4>',
+            """
+            <h2 style="margin-bottom:0;">Карьер "БАРАКАЛИ"- @SJ8696</h2>
+            <h4 style="margin-top:4px;">Учёт ходок БелАЗов по экскаваторам</h4>
+            """,
             unsafe_allow_html=True,
         )
 
@@ -326,11 +334,44 @@ def main():
 
     st.divider()
 
-    # ================= STEP 2: ВЫБОР ОТВАЛА =================
+    # ================= STEP 2: ВЫБОР ОТВАЛА (хоз. работа faqat yangi otval qo'shadi) =================
     otvals_df = get_otvals_table()
 
     if selected_otval is None:
         st.subheader("Выберите отвал")
+
+        # Хоз. работа – Faqat yangi otval nomi + km qo'shish
+        with st.expander("Хоз. работа (добавить отвал)", expanded=False):
+            new_otval_name = st.text_input(
+                "Название нового отвала",
+                key="hoz_new_otval_name",
+                placeholder="Например: МОФ-4",
+            )
+            new_len_str = st.text_input(
+                "Длина нового отвала (км, можно пусто)",
+                key="hoz_new_otval_len",
+                placeholder="Например: 2.5"
+            )
+            if st.button("💾 Сохранить новый отвал", key="hoz_save_btn"):
+                name = new_otval_name.strip()
+                if not name:
+                    st.error("Название отвала обязательно.")
+                else:
+                    if new_len_str.strip() == "":
+                        length_val = None
+                    else:
+                        try:
+                            length_val = float(new_len_str.replace(",", "."))
+                        except ValueError:
+                            st.error("Длина должна быть числом (например 2.5).")
+                            length_val = None
+
+                    if new_len_str.strip() == "" or length_val is not None:
+                        upsert_otval(name, length_val)
+                        st.success("Новый отвал добавлен.")
+                        st.rerun()
+
+        st.markdown("### Отвалы")
 
         cols = st.columns(2)
         for i, row in otvals_df.iterrows():
@@ -419,12 +460,20 @@ def main():
             df_ex_today = df_ex_today.copy()
             df_ex_today["xodka"] = range(1, len(df_ex_today) + 1)
             df_ex_view = df_ex_today.rename(columns={
-                "truck_id": "belaz_no",
-                "volume": "obem"
+                "truck_id": "Номер БелАЗа",
+                "volume": "Объём, м³",
+                "day": "Дата",
+                "ts": "Время",
+                "excavator": "Экскаватор",
+                "otval": "Отвал",
+                "truck_class": "Класс БелАЗа",
+                "base_volume": "Базовый объём, м³",
+                "factor": "Коэффициент",
+                "xodka": "Ходка №",
             })
             df_ex_view = df_ex_view[
-                ["day", "ts", "excavator", "otval", "belaz_no",
-                 "truck_class", "base_volume", "factor", "obem", "xodka"]
+                ["Дата", "Время", "Экскаватор", "Отвал", "Номер БелАЗа",
+                 "Класс БелАЗа", "Базовый объём, м³", "Коэффициент", "Объём, м³", "Ходка №"]
             ]
             st.dataframe(df_ex_view, use_container_width=True)
 
@@ -444,15 +493,20 @@ def main():
             st.info("Нет данных за выбранную дату по всем экскаваторам.")
         else:
             df_all = df_all.copy()
-            df_all = df_all.rename(columns={
-                "truck_id": "belaz_no"
-            })
-
             total_trips_all = df_all["trips"].sum()
             total_obem_all = df_all["obem"].sum()
 
+            df_all_view = df_all.rename(columns={
+                "day": "Дата",
+                "excavator": "Экскаватор",
+                "otval": "Отвал",
+                "truck_id": "Номер БелАЗа",
+                "trips": "Количество ходок",
+                "obem": "Объём, м³",
+            })
+
             st.markdown("#### Агрегированный свод (день / экскаватор / отвал / БелАЗ)")
-            st.dataframe(df_all, use_container_width=True)
+            st.dataframe(df_all_view, use_container_width=True)
 
             col_a, col_b = st.columns(2)
             with col_a:
@@ -465,84 +519,84 @@ def main():
 
         if not is_admin:
             st.info("Для доступа к admin panel введите верный admin code сверху.")
-            # ❗ Excel ham, otval editing ham ko'rinmaydi
             return
 
         # Admin aktiv:
         st.success("Админ режим активен.")
 
-        # 1) Свод по отвалам и экскаваторам
-        st.markdown("#### Свод по отвалам (отвал + экскаватор, общий объём)")
+        # 1) Свод по отвалам – ТОЛЬКО по отвалу и общему объёму
+        st.markdown("#### Свод по отвалам (общий объём по каждому отвалу)")
 
         df_otval = get_otval_summary(day_str)
 
         if df_otval.empty:
             st.info("Нет данных по отвалам за выбранную дату.")
         else:
-            st.dataframe(df_otval, use_container_width=True)
+            # группируем по отвалу, суммируем объём
+            df_otval_simple = (
+                df_otval
+                .groupby("otval", as_index=False)["obem"]
+                .sum()
+            )
+            df_otval_view = df_otval_simple.rename(columns={
+                "otval": "Отвал",
+                "obem": "Объём, м³",
+            })
+            st.dataframe(df_otval_view, use_container_width=True)
 
-        # 2) Excel eksport – faqat admin rejimida chiqadi
+        # 2) Excel eksport – faqat admin rejimida, 2 ta sheet
         if not df_all.empty:
-            st.markdown("#### 📥 Экспорт общего отчёта (1 лист, все данные)")
+            st.markdown("#### 📥 Экспорт общего отчёта (2 листа)")
 
-            # DETAIL qismi
+            # Sheet 1: Ходки (агрегировано по БелАЗам)
             detail_df = df_all.copy()
-            detail_df["row_type"] = "DETAIL"
+            detail_df_view = detail_df.rename(columns={
+                "day": "Дата",
+                "excavator": "Экскаватор",
+                "otval": "Отвал",
+                "truck_id": "Номер БелАЗа",
+                "trips": "Количество ходок",
+                "obem": "Объём, м³",
+            })
+            total_row_detail = {
+                "Дата": "",
+                "Экскаватор": "ИТОГО",
+                "Отвал": "",
+                "Номер БелАЗа": "",
+                "Количество ходок": total_trips_all,
+                "Объём, м³": total_obem_all,
+            }
+            detail_df_view = pd.concat(
+                [detail_df_view, pd.DataFrame([total_row_detail])],
+                ignore_index=True
+            )
 
-            # OTVAL_SUM qismi
+            # Sheet 2: Отвалы — только отвал + общий объём, + ИТОГО
             if not df_otval.empty:
-                otval_sum_df = df_otval.copy()
-                otval_sum_df["row_type"] = "OTVAL_SUM"
-                otval_sum_df["belaz_no"] = ""
-                otval_sum_df["trips"] = ""
-                otval_sum_df = otval_sum_df.rename(columns={"length": "otval_length"})
-                detail_df["otval_length"] = None
-
-                detail_export = detail_df[["row_type", "day", "excavator", "otval",
-                                           "belaz_no", "trips", "obem", "otval_length"]]
-
-                otval_export = otval_sum_df[["row_type", "day", "excavator", "otval",
-                                             "belaz_no", "trips", "obem", "otval_length"]]
-
-                total_row = {
-                    "row_type": "GRAND_TOTAL",
-                    "day": "",
-                    "excavator": "",
-                    "otval": "",
-                    "belaz_no": "",
-                    "trips": total_trips_all,
-                    "obem": total_obem_all,
-                    "otval_length": "",
+                otval_df_simple = (
+                    df_otval
+                    .groupby("otval", as_index=False)["obem"]
+                    .sum()
+                )
+                otval_df_view = otval_df_simple.rename(columns={
+                    "otval": "Отвал",
+                    "obem": "Объём, м³",
+                })
+                total_row_otval = {
+                    "Отвал": "ИТОГО",
+                    "Объём, м³": otval_df_view["Объём, м³"].sum(),
                 }
-
-                export_df = pd.concat(
-                    [detail_export, otval_export, pd.DataFrame([total_row])],
+                otval_df_view = pd.concat(
+                    [otval_df_view, pd.DataFrame([total_row_otval])],
                     ignore_index=True
                 )
             else:
-                detail_df = df_all.copy()
-                detail_df["row_type"] = "DETAIL"
-                detail_df["otval_length"] = None
-
-                total_row = {
-                    "row_type": "GRAND_TOTAL",
-                    "day": "",
-                    "excavator": "",
-                    "otval": "",
-                    "belaz_no": "",
-                    "trips": total_trips_all,
-                    "obem": total_obem_all,
-                    "otval_length": "",
-                }
-
-                export_df = pd.concat(
-                    [detail_df, pd.DataFrame([total_row])],
-                    ignore_index=True
-                )
+                otval_df_view = pd.DataFrame(columns=["Отвал", "Объём, м³"])
 
             output = BytesIO()
             with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                export_df.to_excel(writer, index=False, sheet_name="Данные")
+                detail_df_view.to_excel(writer, index=False, sheet_name="Ходки")
+                otval_df_view.to_excel(writer, index=False, sheet_name="Отвалы")
 
             st.download_button(
                 label="⬇️ Скачать общий Excel-файл (admin)",
@@ -553,72 +607,63 @@ def main():
 
         st.divider()
 
-        # 3) Управление отвалами (существующие + новые)
+        # 3) Управление отвалами (таблица + добавить + удалить)
         st.markdown("#### Управление отвалами")
 
         df_otvals_table = get_otvals_table()
-        st.dataframe(df_otvals_table, use_container_width=True)
+        st.dataframe(df_otvals_table.rename(columns={
+            "id": "ID",
+            "name": "Отвал",
+            "length": "Длина, км"
+        }), use_container_width=True)
 
-        st.markdown("**Изменить длину существующего отвала**")
-        if not df_otvals_table.empty:
-            existing_names = df_otvals_table["name"].tolist()
-            sel_name = st.selectbox("Существующий отвал", existing_names, key="edit_otval_select")
-            current_len = df_otvals_table.loc[df_otvals_table["name"] == sel_name, "length"].iloc[0]
-            if current_len is not None:
-                st.write(f"Текущая длина: **{current_len} км**")
-            else:
-                st.write("Текущая длина: _не задана_")
-
-            new_len_str = st.text_input(
-                "Новая длина (км, можно пусто)",
-                key="edit_otval_length",
-                placeholder="Например: 2.5"
-            )
-            if st.button("💾 Обновить длину отвала"):
-                if new_len_str.strip() == "":
-                    length_val = None
-                else:
-                    try:
-                        length_val = float(new_len_str.replace(",", "."))
-                    except ValueError:
-                        st.error("Длина должна быть числом (например 2.5).")
-                        length_val = None
-
-                if new_len_str.strip() == "" or length_val is not None:
-                    upsert_otval(sel_name, length_val)
-                    st.success("Длина отвала обновлена.")
-                    st.rerun()
-
-        st.markdown("---")
-        st.markdown("**Добавить новый отвал**")
-        new_otval_name = st.text_input(
-            "Название нового отвала",
-            key="new_otval_name",
-            placeholder="Например: МОФ-4",
+        st.markdown("**Добавить новый отвал (Admin)**")
+        new_otval_name_admin = st.text_input(
+            "Название нового отвала (Admin)",
+            key="new_otval_name_admin",
+            placeholder="Например: МОФ-5",
         )
-        new_len_input = st.text_input(
-            "Длина нового отвала (км, можно пусто)",
-            key="new_otval_len",
+        new_len_input_admin = st.text_input(
+            "Длина нового отвала (км, можно пусто) (Admin)",
+            key="new_otval_len_admin",
             placeholder="Например: 3.2"
         )
 
-        if st.button("➕ Добавить отвал"):
-            name = new_otval_name.strip()
-            if not name:
-                st.error("Название отвала обязательно.")
-            else:
-                if new_len_input.strip() == "":
-                    length_val = None
-                else:
-                    try:
-                        length_val = float(new_len_input.replace(",", "."))
-                    except ValueError:
-                        st.error("Длина должна быть числом (например 3.2).")
-                        length_val = None
+        add_col, del_col = st.columns(2)
 
-                if new_len_input.strip() == "" or length_val is not None:
-                    upsert_otval(name, length_val)
-                    st.success("Новый отвал добавлен.")
+        with add_col:
+            if st.button("➕ Добавить отвал (Admin)"):
+                name = new_otval_name_admin.strip()
+                if not name:
+                    st.error("Название отвала обязательно.")
+                else:
+                    if new_len_input_admin.strip() == "":
+                        length_val = None
+                    else:
+                        try:
+                            length_val = float(new_len_input_admin.replace(",", "."))
+                        except ValueError:
+                            st.error("Длина должна быть числом (например 3.2).")
+                            length_val = None
+
+                    if new_len_input_admin.strip() == "" or length_val is not None:
+                        upsert_otval(name, length_val)
+                        st.success("Новый отвал добавлен (Admin).")
+                        st.rerun()
+
+        with del_col:
+            st.markdown("**Удалить отвал**")
+            if df_otvals_table.empty:
+                st.write("Отвалов нет.")
+            else:
+                del_name = st.selectbox(
+                    "Выберите отвал для удаления",
+                    df_otvals_table["name"].tolist(),
+                    key="delete_otval_select"
+                )
+                if st.button("🗑 Удалить отвал", type="secondary"):
+                    delete_otval(del_name)
+                    st.warning(f"Отвал «{del_name}» удалён. История в записях сохранена.")
                     st.rerun()
 
 

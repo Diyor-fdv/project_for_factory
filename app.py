@@ -8,7 +8,7 @@ DB_FILE = "belaz.db"
 LOGO_URL = "https://agmk.uz/uploads/news/3a1b485c044e3d563acdd095d26ee287.jpg"
 ADMIN_CODE = "shjsh707"
 
-# maxsus belgi – J/R rejimi
+# maxsus belgi – Ж/Р rejimi (ichki identifikator, foydalanuvchiga ko‘rinmaydi)
 OTVAL_JR = "__J_R__"
 
 
@@ -67,7 +67,7 @@ def init_db():
         """
     )
 
-    # J/R – lokomotiv bo‘yicha объём (UTT ga qo‘shilmaydi)
+    # Ж/Р – lokomotiv bo‘yicha объём (UTT ga qo‘shilmaydi)
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS jr_records (
@@ -305,7 +305,7 @@ def get_requests_by_day(day_str: str) -> pd.DataFrame:
 
 
 # =======================
-#  DB – J/R
+#  DB – Ж/Р
 # =======================
 
 def insert_jr(loco: str, volume: float):
@@ -533,7 +533,7 @@ def main():
         st.markdown("---")
         st.markdown("Если нужно перейти к учёту ходок БелАЗов:")
         if st.button("➡️ Перейти в режим погрузки"):
-            st.session_state["mode"] = "pogрузки"
+            st.session_state["mode"] = "pogruzki"
             st.rerun()
 
         return  # zayavki uchun qolgan kod kerak emas
@@ -542,14 +542,14 @@ def main():
 
     otvals_df = get_otvals_table()
 
-    # OTVAL TANLASHGAChA: faqat km o‘zgartirish + yangi Хоз. работа otvali + J/R tugmasi
+    # OTVAL TANLASHGAChA: faqat km o‘zgartirish + yangi Хоз. работа otvali + Ж/Р tugmasi
     if selected_otval is None:
         st.subheader("Выберите отвал / режим для погрузки")
 
         # 1) Masofani o‘zgartirish + jadval
         with st.expander("Указать расстояние до отвала (км)", expanded=False):
             if otvals_df.empty:
-                st.info("Отвалов пока нет. Администратор может добавить их в admin panel.")
+                st.info("Отвалов пока нет. Администратор puede добавить их в admin panel.")
             else:
                 name_select = st.selectbox(
                     "Выберите отвал",
@@ -632,7 +632,7 @@ def main():
 
         sp_cols = st.columns(2)
         with sp_cols[0]:
-            if st.button("J/R", use_container_width=True):
+            if st.button("Ж/Р", use_container_width=True):
                 st.session_state["selected_otval"] = OTVAL_JR
                 st.rerun()
 
@@ -642,7 +642,7 @@ def main():
     is_jr = (selected_otval == OTVAL_JR)
 
     if is_jr:
-        otval_label = "J/R"
+        otval_label = "Ж/Р"
     else:
         otval_len = get_otval_length(selected_otval)
         if otval_len is not None:
@@ -671,9 +671,9 @@ def main():
     with tab1:
         today_str = date.today().strftime("%Y-%m-%d")
 
-        # === 1) J/R rejimi ===
+        # === 1) Ж/Р rejimi ===
         if is_jr:
-            st.subheader("J/R – учёт по локомотивам")
+            st.subheader("Ж/Р – учёт по локомотивам")
 
             with st.form("jr_form_mach", clear_on_submit=True):
                 col_j1, col_j2 = st.columns(2)
@@ -682,7 +682,7 @@ def main():
                 with col_j2:
                     vol_str = st.text_input("Объём, м³", placeholder="Например: 120.5")
 
-                jr_submit = st.form_submit_button("💾 Сохранить J/R")
+                jr_submit = st.form_submit_button("💾 Сохранить Ж/Р")
 
             if jr_submit:
                 loco_clean = loco.strip()
@@ -696,12 +696,12 @@ def main():
                         st.error("Объём должен быть числом.")
                     else:
                         insert_jr(loco_clean, vol_val)
-                        st.success("J/R запись сохранена.")
+                        st.success("Ж/Р запись сохранена.")
 
-            st.markdown(f"#### J/R за {today_str}")
+            st.markdown(f"#### Ж/Р за {today_str}")
             df_jr_today = get_jr_by_day(today_str)
             if df_jr_today.empty:
-                st.info("J/R записей за сегодня нет.")
+                st.info("Ж/Р записей за сегодня нет.")
             else:
                 df_jr_view = df_jr_today.copy()
                 df_jr_view = df_jr_view.rename(columns={
@@ -845,7 +845,7 @@ def main():
             st.dataframe(df_otval_full_view, use_container_width=True)
 
         st.divider()
-        st.markdown("#### 📥 Экспорт отчётов (pogрузки / zayavki)")
+        st.markdown("#### 📥 Экспорт отчётов (pogruzki / zayavki)")
 
         # --- Pogruzki Excel (BelAZ hodkalar) ---
         df_details = get_daily_details_all(day_str)
@@ -853,10 +853,10 @@ def main():
         if df_details.empty:
             st.info("Нет данных по погрузкам за выбранную дату (для Excel).")
         else:
+            # ts (Дата/Время) ni ishlatamiz, day ustuni Excelga kirmaydi
             df_det_view = df_details.copy()
             df_det_view = df_det_view.rename(columns={
-                "day": "Дата",
-                "ts": "Время",
+                "ts": "Дата/Время",
                 "excavator": "Экскаватор",
                 "otval": "Отвал",
                 "truck_id": "Номер БелАЗа",
@@ -867,14 +867,13 @@ def main():
             })
 
             df_det_view = df_det_view[
-                ["Дата", "Время", "Экскаватор", "Отвал", "Номер БелАЗа",
+                ["Дата/Время", "Экскаватор", "Отвал", "Номер БелАЗа",
                  "Класс БелАЗа", "Базовый объём, м³", "Коэффициент", "Объём, м³"]
             ]
 
             total_obem_det = df_det_view["Объём, м³"].sum()
             total_row = {
-                "Дата": "",
-                "Время": "",
+                "Дата/Время": "",
                 "Экскаватор": "УТТ",  # umumiy
                 "Отвал": "",
                 "Номер БелАЗа": "",
@@ -910,25 +909,25 @@ def main():
             else:
                 otval_df_view = pd.DataFrame(columns=["Отвал", "Объём, м³"])
 
-            # --- J/R jadvali (alohida, UTT ga qo‘shilmaydi) ---
+            # --- Ж/Р jadvali (alohida, UTT ga qo‘shilmaydi) ---
             df_jr_day = get_jr_by_day(day_str)
             if df_jr_day.empty:
-                jr_view = pd.DataFrame(columns=["J/R", "№ локомотива", "Объём, м³"])
+                jr_view = pd.DataFrame(columns=["Ж/Р", "№ локомотива", "Объём, м³"])
             else:
                 jr_view = df_jr_day.copy()
                 jr_view = jr_view.rename(columns={
                     "loco": "№ локомотива",
                     "volume": "Объём, м³",
                 })
-                jr_view["J/R"] = "J/R"
-                jr_view = jr_view[["J/R", "№ локомотива", "Объём, м³"]]
+                jr_view["Ж/Р"] = "Ж/Р"
+                jr_view = jr_view[["Ж/Р", "№ локомотива", "Объём, м³"]]
 
             output_pog = BytesIO()
             with pd.ExcelWriter(output_pog, engine="xlsxwriter") as writer:
                 # Sheet 1 – Ходки
                 df_det_view_total.to_excel(writer, index=False, sheet_name="Ходки")
 
-                # Sheet 2 – Отвалы (+ J/R pastda)
+                # Sheet 2 – Отвалы (+ Ж/Р pastda)
                 otval_df_view.to_excel(writer, index=False, sheet_name="Отвалы")
 
                 if not jr_view.empty:
@@ -945,7 +944,7 @@ def main():
                 data=output_pog.getvalue(),
                 file_name=f"belaz_pogruzki_{day_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="download_pogрузки"
+                key="download_pogruzki"
             )
 
         # --- Zayavki Excel ---
@@ -955,13 +954,13 @@ def main():
             st.info("Нет заявок за выбранную дату (для Excel).")
         else:
             df_req_all_view = df_req_all.copy()
+            # ts – to‘liq datetime, shuni "Дата/Время" qilib ishlatamiz
             df_req_all_view = df_req_all_view.rename(columns={
-                "day": "Дата",
-                "ts": "Время",
+                "ts": "Дата/Время",
                 "excavator": "Экскаватор",
                 "text": "Заявка",
             })
-            df_req_all_view = df_req_all_view[["Дата", "Время", "Экскаватор", "Заявка"]]
+            df_req_all_view = df_req_all_view[["Дата/Время", "Экскаватор", "Заявка"]]
 
             output_zay = BytesIO()
             with pd.ExcelWriter(output_zay, engine="xlsxwriter") as writer:

@@ -1,15 +1,24 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from io import BytesIO
 
 DB_FILE = "belaz.db"
 LOGO_URL = "https://agmk.uz/uploads/news/3a1b485c044e3d563acdd095d26ee287.jpg"
 ADMIN_CODE = "shjsh707"
 
-# maxsus belgi – Ж/Р rejimi (ichki identifikator, foydalanuvchiga ko‘rinmaydi)
+# maxsus belgi – Ж/Р rejimi
 OTVAL_JR = "__J_R__"
+
+
+# =======================
+#  Vaqt (Toshkent UTC+5)
+# =======================
+
+def get_now_tashkent():
+    """Server UTC bo'lsa ham, bu yerda +5 soat qo'shib Toshkent vaqti qilamiz."""
+    return datetime.utcnow() + timedelta(hours=5)
 
 
 # =======================
@@ -143,7 +152,7 @@ def insert_record(excavator: str, otval: str, truck_id: int, is_half: bool):
     factor = 0.5 if is_half else 1.0
     volume = base_volume * factor
 
-    now = datetime.now()
+    now = get_now_tashkent()
     ts = now.strftime("%Y-%m-%d %H:%M:%S")
     day = now.strftime("%Y-%m-%d")
 
@@ -264,7 +273,7 @@ def delete_otval(name: str):
 def insert_request(excavator: str, text: str):
     conn = get_connection()
     cur = conn.cursor()
-    now = datetime.now()
+    now = get_now_tashkent()
     ts = now.strftime("%Y-%m-%d %H:%M:%S")
     day = now.strftime("%Y-%m-%d")
     cur.execute(
@@ -311,7 +320,7 @@ def get_requests_by_day(day_str: str) -> pd.DataFrame:
 def insert_jr(loco: str, volume: float):
     conn = get_connection()
     cur = conn.cursor()
-    now = datetime.now()
+    now = get_now_tashkent()
     ts = now.strftime("%Y-%m-%d %H:%M:%S")
     day = now.strftime("%Y-%m-%d")
     cur.execute(
@@ -542,17 +551,17 @@ def main():
 
     otvals_df = get_otvals_table()
 
-    # OTVAL TANLASHGAChA: faqat km o‘zgartirish + yangi Хоз. работа otvali + Ж/Р tugmasi
+    # OTVAL TANLASHGAChA: km o‘zgartirish + yangi Хоз. работа + Ж/Р
     if selected_otval is None:
         st.subheader("Выберите отвал / режим для погрузки")
 
-        # 1) Masofani o‘zgartirish + jadval
-        with st.expander("Указать расстояние до отвала (км)", expanded=False):
+        # 1) Masofani o‘zgartirish + jadval + Хоз. работа yaratish
+        with st.expander("Указать расстояние до отвала (км) / хоз. работы", expanded=False):
             if otvals_df.empty:
-                st.info("Отвалов пока нет. Администратор puede добавить их в admin panel.")
+                st.info("Отвалов пока нет. Администратор может добавить их в admin panel.")
             else:
                 name_select = st.selectbox(
-                    "Выберите отвал",
+                    "Выберите отвал для редактирования расстояния",
                     otvals_df["name"].tolist(),
                     key="hoz_select_name"
                 )
@@ -584,7 +593,7 @@ def main():
                 st.dataframe(show_df, use_container_width=True)
 
             st.markdown("---")
-            st.markdown("**Добавить хоз. работу**")
+            st.markdown("**Добавить хоз. работу (как отвал)**")
             hw_name = st.text_input(
                 "Название хоз. работы / отвала",
                 key="hw_new_name",
@@ -713,7 +722,7 @@ def main():
                 df_jr_view = df_jr_view[["Дата", "Время", "№ локомотива", "Объём, м³"]]
                 st.dataframe(df_jr_view, use_container_width=True)
 
-        # === 2) Oddiy otval – BelAZ hodkalar (shu ichida Хоз. работа otvallari ham bor) ===
+        # === 2) Oddiy otval – BelAZ hodkalar ===
         else:
             st.subheader(f"Новая ходка — {selected_excavator}, {otval_label}")
 
@@ -845,18 +854,19 @@ def main():
             st.dataframe(df_otval_full_view, use_container_width=True)
 
         st.divider()
-        st.markdown("#### 📥 Экспорт отчётов (pogruzki / zayavki)")
+        st.markdown("#### 📥 Экспорт отчётов (погрузки / заявки)")
 
-        # --- Pogruzki Excel (BelAZ hodkalar) ---
+        # --- Pogruzki Excel (BelAZ hodkalar, sana+vaqt bitta ustunda) ---
         df_details = get_daily_details_all(day_str)
 
         if df_details.empty:
             st.info("Нет данных по погрузкам за выбранную дату (для Excel).")
         else:
-            # ts (Дата/Время) ni ishlatamiz, day ustuni Excelga kirmaydi
             df_det_view = df_details.copy()
+            # Sana + vaqt bitta ustun
+            df_det_view["Дата/Время"] = df_det_view["ts"]
+
             df_det_view = df_det_view.rename(columns={
-                "ts": "Дата/Время",
                 "excavator": "Экскаватор",
                 "otval": "Отвал",
                 "truck_id": "Номер БелАЗа",
@@ -887,7 +897,7 @@ def main():
                 ignore_index=True
             )
 
-            # --- Отвалы sheet: records (shuningdek xoz. работа otvallari) ---
+            # --- Отвалы sheet: records (shuningdek хоз. работа otvallari) ---
             if not df_otval_full.empty:
                 otval_df_simple = (
                     df_otval_full
@@ -954,13 +964,13 @@ def main():
             st.info("Нет заявок за выбранную дату (для Excel).")
         else:
             df_req_all_view = df_req_all.copy()
-            # ts – to‘liq datetime, shuni "Дата/Время" qilib ishlatamiz
             df_req_all_view = df_req_all_view.rename(columns={
-                "ts": "Дата/Время",
+                "day": "Дата",
+                "ts": "Время",
                 "excavator": "Экскаватор",
                 "text": "Заявка",
             })
-            df_req_all_view = df_req_all_view[["Дата/Время", "Экскаватор", "Заявка"]]
+            df_req_all_view = df_req_all_view[["Дата", "Время", "Экскаватор", "Заявка"]]
 
             output_zay = BytesIO()
             with pd.ExcelWriter(output_zay, engine="xlsxwriter") as writer:

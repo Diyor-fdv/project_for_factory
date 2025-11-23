@@ -124,14 +124,14 @@ def get_volume_by_truck_id(truck_id: int):
     """
     0–99    -> 42 м³ (130т)
     100–140 -> 75 м³ (220т)
-    200–205 -> 50 м³ (240т)
+    200–205 -> 80 м³ (240т)
     """
     if 0 <= truck_id <= 99:
         return "130т", 42.0
     elif 100 <= truck_id <= 140:
         return "220т", 75.0
     elif 200 <= truck_id <= 205:
-        return "240т", 50.0
+        return "240т", 80.0
     else:
         return "unknown", 0.0
 

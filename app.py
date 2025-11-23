@@ -856,7 +856,7 @@ def main():
         st.divider()
         st.markdown("#### 📥 Экспорт отчётов (погрузки / заявки)")
 
-        # --- Pogruzki Excel (BelAZ hodkalar, sana+vaqt bitta ustunda) ---
+        # --- Pogruzki Excel (BelAZ hodkalar, sana+vaqt bitta ustunda, OTVAL+KM) ---
         df_details = get_daily_details_all(day_str)
 
         if df_details.empty:
@@ -866,9 +866,27 @@ def main():
             # Sana + vaqt bitta ustun
             df_det_view["Дата/Время"] = df_det_view["ts"]
 
+            # Otvalga km qo'shish uchun otvals bilan merge
+            otvals_df_full = get_otvals_table()
+            if not otvals_df_full.empty:
+                df_det_view = df_det_view.merge(
+                    otvals_df_full.rename(columns={"name": "otval", "length": "_len_km"}),
+                    how="left",
+                    on="otval"
+                )
+            else:
+                df_det_view["_len_km"] = None
+
+            # Отвал nom + (km) formatiga o'zgartiramiz
+            def make_otval_label(row):
+                if pd.isna(row["_len_km"]):
+                    return row["otval"]
+                return f'{row["otval"]} ({row["_len_km"]} км)'
+
+            df_det_view["Отвал"] = df_det_view.apply(make_otval_label, axis=1)
+
             df_det_view = df_det_view.rename(columns={
                 "excavator": "Экскаватор",
-                "otval": "Отвал",
                 "truck_id": "Номер БелАЗа",
                 "truck_class": "Класс БелАЗа",
                 "base_volume": "Базовый объём, м³",
